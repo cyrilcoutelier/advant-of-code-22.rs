@@ -4,6 +4,7 @@ use std::io::{self, BufRead};
 use std::path::Path;
 
 type TreeSize = u8;
+type ScenicScore = usize;
 
 struct Forest {
     rows: Vec<Vec<TreeSize>>,
@@ -49,7 +50,7 @@ impl Forest {
     fn get_left_trees<'a>(&'a self, pos: &Position) -> Box<dyn Iterator<Item = &'a TreeSize> + 'a> {
         let vec = self.rows.get(pos.row_idx).unwrap();
         let slice = &vec[0..pos.column_idx];
-        let iter = slice.iter();
+        let iter = slice.iter().rev();
         Box::new(iter)
     }
 
@@ -66,7 +67,7 @@ impl Forest {
     fn get_top_trees<'a>(&'a self, pos: &Position) -> Box<dyn Iterator<Item = &'a TreeSize> + 'a> {
         let column_idx = pos.column_idx;
         let slice = &self.rows[0..pos.row_idx];
-        Box::new(slice.iter().map(move |row| row.get(column_idx).unwrap()))
+        Box::new(slice.iter().rev().map(move |row| row.get(column_idx).unwrap()))
     }
 
     fn get_bottom_trees<'a>(
@@ -78,18 +79,22 @@ impl Forest {
         Box::new(slice.iter().map(move |row| row.get(column_idx).unwrap()))
     }
 
-    fn is_tree_visible(&self, pos: &Position) -> bool {
-        if pos.row_idx == 0
-            || pos.row_idx == self.get_height() - 1
-            || pos.column_idx == 0
-            || pos.column_idx == self.get_width() - 1
-        {
-            return true;
-        }
+    fn get_tree_scenic_score(&self, pos: &Position) -> ScenicScore {
         let tree_size = self.get_tree_size(pos);
         Forest::DIRECTIONS
             .iter()
-            .any(|method| method(self, pos).all(|adjacent_size| *adjacent_size < tree_size))
+            .map(|method| {
+                let mut count = 0;
+                let result = method(self, pos).enumerate().find(|(_, adjacent_size)| {
+                    count += 1;
+                    **adjacent_size >= tree_size
+                });
+                match result {
+                    Some((nb_trees, _)) => nb_trees + 1,
+                    None => count,
+                }
+            })
+            .product()
     }
 
     fn get_tree_size(&self, pos: &Position) -> TreeSize {
@@ -175,7 +180,7 @@ fn main() {
 
     let result = forest
         .get_trees_iter()
-        .filter(|pos| forest.is_tree_visible(pos))
-        .count();
+        .map(|pos| forest.get_tree_scenic_score(&pos))
+        .fold(0, |a, b| a.max(b));
     println!("The result is `{}`", result);
 }
