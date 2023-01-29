@@ -6,6 +6,8 @@ use std::path::Path;
 
 type PosUnit = i16;
 
+const ROPE_SIZE: usize = 10;
+
 enum Direction {
     Up,
     Down,
@@ -85,19 +87,22 @@ impl Position {
 }
 
 struct Map {
-    pos_head: Position,
-    pos_tail: Position,
+    knots: Vec<Position>,
     pos_tail_history: HashSet<Position>,
 }
 
 impl Map {
     fn new() -> Self {
+        let initial_pos = Position { x: 0, y: 0 };
+
+        let mut knots = Vec::with_capacity(ROPE_SIZE);
+        knots.resize_with(ROPE_SIZE, || initial_pos.clone());
+
         let mut pos_tail_history = HashSet::new();
-        let pos_tail = Position { x: 0, y: 0 };
-        pos_tail_history.insert(pos_tail.clone());
+        pos_tail_history.insert(initial_pos);
+
         Map {
-            pos_head: pos_tail.clone(),
-            pos_tail,
+            knots,
             pos_tail_history,
         }
     }
@@ -110,30 +115,36 @@ impl Map {
 
     fn process_move(&mut self, direction: &Direction) {
         self.move_head(direction);
-        self.update_tail();
+        self.update_knots();
         self.record_tail_pos();
     }
 
     fn move_head(&mut self, direction: &Direction) {
+        let mut pos_head = self.knots.first_mut().unwrap();
         match direction {
-            Direction::Up => self.pos_head.y += 1,
-            Direction::Down => self.pos_head.y -= 1,
-            Direction::Right => self.pos_head.x += 1,
-            Direction::Left => self.pos_head.x -= 1,
+            Direction::Up => pos_head.y += 1,
+            Direction::Down => pos_head.y -= 1,
+            Direction::Right => pos_head.x += 1,
+            Direction::Left => pos_head.x -= 1,
         };
     }
 
-    fn update_tail(&mut self) {
-        let diff = self.pos_head.sub(&self.pos_tail);
-        if !diff.is_too_far() {
-            return;
-        }
-        let catchup_move = diff.get_catchup_move();
-        self.pos_tail.apply_diff(&catchup_move);
+    fn update_knots(&mut self) {
+        let mut previous_knot = self.knots.first().unwrap().clone();
+
+        self.knots.iter_mut().skip(1).for_each(|knot| {
+            let diff = previous_knot.sub(knot);
+            if diff.is_too_far() {
+                let catchup_move = diff.get_catchup_move();
+                knot.apply_diff(&catchup_move);
+            }
+            previous_knot = knot.clone();
+        });
     }
 
     fn record_tail_pos(&mut self) {
-        self.pos_tail_history.insert(self.pos_tail.clone());
+        self.pos_tail_history
+            .insert(self.knots.last().unwrap().clone());
     }
 }
 
