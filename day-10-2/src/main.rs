@@ -3,10 +3,13 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 
-type RegisterUnit = i32;
+type RegisterUnit = isize;
 const STARTING_VALUE: RegisterUnit = 1;
-const FIRST_INTERESTING_CYCLE: i32 = 20;
-const INTERESTING_CYCLE_DISTANCE: i32 = 40;
+const SCREEN_WIDTH: usize = 40;
+const SCREEN_HEIGHT: usize = 6;
+const SPRITE_WIDTH: usize = 3;
+const PIXEL_OFF: char = ' ';
+const PIXEL_ON: char = 'X';
 
 struct Instruction {
     nb_cycles: usize,
@@ -49,26 +52,24 @@ impl Payload {
     }
 }
 
-struct Processor {
+struct Processor<'a> {
     instructions_list: Vec<Instruction>,
     current_instruction: Option<Instruction>,
     cycle_number: usize,
-    register_x: RegisterUnit,
     current_instruction_cycle: usize,
     loading_instructions: bool,
-    interesting_signals: Vec<RegisterUnit>,
+    screen: &'a mut Screen,
 }
 
-impl Processor {
-    fn new() -> Self {
+impl<'a> Processor<'a> {
+    fn new(screen: &'a mut Screen) -> Self {
         Processor {
             instructions_list: Vec::new(),
             current_instruction: None,
             cycle_number: 0,
-            register_x: STARTING_VALUE,
             current_instruction_cycle: 0,
             loading_instructions: true,
-            interesting_signals: Vec::new(),
+            screen,
         }
     }
 
@@ -86,10 +87,7 @@ impl Processor {
         self.stop_loading_if_needed();
         self.start_cycle();
         self.count_cycle();
-        if is_cycle_interesting(self.cycle_number) {
-            let signal_strength = self.get_signal_strength();
-            self.interesting_signals.push(signal_strength);
-        }
+        self.screen.draw_pixel();
         self.end_cycle();
     }
 
@@ -134,20 +132,94 @@ impl Processor {
     }
 
     fn perform_add_x(&mut self, add_value: RegisterUnit) {
-        self.register_x += add_value;
-    }
-
-    fn get_signal_strength(&self) -> RegisterUnit {
-        self.register_x * self.cycle_number as RegisterUnit
+        self.screen.move_sprite(add_value);
     }
 }
 
-fn is_cycle_interesting(cycle_number: usize) -> bool {
-    let cycle_number = cycle_number as i32 - FIRST_INTERESTING_CYCLE;
-    if cycle_number < 0 {
-        return false;
+struct Screen {
+    rows: Vec<Vec<char>>,
+    rtc_x: usize,
+    rtc_y: usize,
+    sprite_middle_x: RegisterUnit,
+}
+
+impl Screen {
+    fn new() -> Self {
+        let row = vec![PIXEL_OFF; SCREEN_WIDTH];
+        let mut rows = Vec::with_capacity(SCREEN_HEIGHT);
+        rows.resize_with(SCREEN_HEIGHT, || row.clone());
+
+        Screen {
+            rows,
+            rtc_x: 0,
+            rtc_y: 0,
+            sprite_middle_x: STARTING_VALUE,
+        }
     }
-    cycle_number % INTERESTING_CYCLE_DISTANCE == 0
+
+    fn draw_pixel(&mut self) {
+        if self.is_pixel_in_sprite() {
+            self.rows[self.rtc_y][self.rtc_x] = PIXEL_ON;
+        }
+        self.move_rtc();
+    }
+
+    fn move_rtc(&mut self) {
+        self.rtc_x += 1;
+        if self.rtc_x >= SCREEN_WIDTH {
+            self.rtc_x = 0;
+            self.rtc_y += 1;
+        }
+    }
+
+    fn is_pixel_in_sprite(&self) -> bool {
+        let sprite_start = self.sprite_middle_x - SPRITE_WIDTH as RegisterUnit / 2;
+        let rtc_x = self.rtc_x as RegisterUnit;
+        rtc_x >= sprite_start && rtc_x < sprite_start + SPRITE_WIDTH as RegisterUnit
+    }
+
+    fn move_sprite(&mut self, delta_x: RegisterUnit) {
+        self.sprite_middle_x += delta_x;
+    }
+
+    fn print(&self) {
+        self.rows.iter().for_each(|row| {
+            let s: String = row.iter().collect();
+            println!("{}", s);
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_is_pixel_in_sprite() {
+        let mut screen = Screen::new();
+
+        screen.move_sprite(1);
+        assert_eq!(screen.sprite_middle_x, 2, "sprite middle position");
+        assert_eq!(screen.rtc_x, 0, "rtc_x position");
+
+        assert_eq!(screen.is_pixel_in_sprite(), false, "pixel before sprite");
+        screen.move_rtc();
+        assert_eq!(
+            screen.is_pixel_in_sprite(),
+            true,
+            "pixel at beginning of sprite"
+        );
+        screen.move_rtc();
+        assert_eq!(
+            screen.is_pixel_in_sprite(),
+            true,
+            "pixel at middle of sprite"
+        );
+        screen.move_rtc();
+        assert_eq!(screen.is_pixel_in_sprite(), true, "pixel at end of sprite");
+        screen.move_rtc();
+        assert_eq!(screen.is_pixel_in_sprite(), false, "pixel after sprite");
+    }
 }
 
 fn main() {
@@ -157,7 +229,8 @@ fn main() {
     let file = File::open(path).unwrap();
     let lines = io::BufReader::new(file).lines();
 
-    let mut processor = Processor::new();
+    let mut screen = Screen::new();
+    let mut processor = Processor::new(&mut screen);
 
     lines
         .filter_map(|line| match line {
@@ -176,6 +249,6 @@ fn main() {
         processor.do_cycle();
     }
 
-    let result: RegisterUnit = processor.interesting_signals.iter().sum();
-    println!("The result is `{}`", result);
+    println!("The result is:");
+    screen.print();
 }
