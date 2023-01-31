@@ -1,7 +1,7 @@
 #![feature(map_first_last)]
 
 use std::cell::RefCell;
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -11,35 +11,71 @@ use std::str::Split;
 type WorryLevel = u32;
 type MonkeyId = usize;
 
-const NB_ROUNDS: usize = 20;
-const INTEREST_LOSS_FACTOR: WorryLevel = 3;
+const NB_ROUNDS: usize = 10000;
 const NB_ACTIVE_MONKEYS: usize = 2;
 
-fn multiply(left: WorryLevel, right: WorryLevel) -> WorryLevel {
-    left * right
+struct Item {
+    initial_level: WorryLevel,
+    congruences_map: BTreeMap<WorryLevel, WorryLevel>,
 }
 
-fn add(left: WorryLevel, right: WorryLevel) -> WorryLevel {
-    left + right
+impl Item {
+    fn new(initial_level: WorryLevel) -> Self {
+        let congruences_map = BTreeMap::new();
+        Item {
+            initial_level,
+            congruences_map,
+        }
+    }
+
+    fn fill_congruences_map(&mut self, congruences_list: &[WorryLevel]) {
+        congruences_list.iter().for_each(|test_value| {
+            self.congruences_map
+                .entry(*test_value)
+                .or_insert_with(|| self.initial_level % test_value);
+        })
+    }
+
+    // IF a ≡ b (n) THEN a+c ≡ b+c (n)
+    fn add(&mut self, right: Option<WorryLevel>) {
+        let right = right.unwrap();
+        self.congruences_map
+            .iter_mut()
+            .for_each(|(test_value, current_value)| {
+                *current_value = (*current_value + right) % test_value;
+            })
+    }
+
+    // IF a ≡ b (n) THEN ac ≡ bc (n)
+    // IF a ≡ b (n) THEN a^2 ≡ b^2 (n)
+    fn multiply(&mut self, right: Option<WorryLevel>) {
+        self.congruences_map
+            .iter_mut()
+            .for_each(|(test_value, current_value)| {
+                let local_right = match right {
+                    Some(value) => value,
+                    None => *current_value,
+                };
+
+                *current_value = (*current_value * local_right) % test_value;
+            })
+    }
 }
 
 struct Operation {
-    function: fn(WorryLevel, WorryLevel) -> WorryLevel,
+    function: fn(&mut Item, Option<WorryLevel>),
     right: Option<WorryLevel>,
 }
 
 impl Operation {
-    fn manipulate(&self, item: WorryLevel) -> WorryLevel {
-        match self.right {
-            Some(right) => (self.function)(item, right),
-            None => (self.function)(item, item),
-        }
+    fn manipulate(&self, item: &mut Item) {
+        (self.function)(item, self.right);
     }
 }
 
 struct Flyingitem {
     target_monkey_id: MonkeyId,
-    item: WorryLevel,
+    item: Item,
 }
 
 struct Monkey {
@@ -48,8 +84,8 @@ struct Monkey {
     test_value: WorryLevel,
     target_true: MonkeyId,
     target_false: MonkeyId,
-    items: VecDeque<WorryLevel>,
-    manipulated_item: Option<WorryLevel>,
+    items: VecDeque<Item>,
+    manipulated_item: Option<Item>,
     manipulations_count: usize,
 }
 
@@ -60,7 +96,7 @@ impl Monkey {
         test_value: WorryLevel,
         target_true: MonkeyId,
         target_false: MonkeyId,
-        items: VecDeque<WorryLevel>,
+        items: VecDeque<Item>,
     ) -> Self {
         Monkey {
             id,
@@ -84,22 +120,14 @@ impl Monkey {
     }
 
     fn manipulate_item(&mut self) {
-        let mut item = self.manipulated_item.unwrap();
-        item = self.operation.manipulate(item);
-        self.manipulated_item = Some(item);
+        let item = self.manipulated_item.as_mut().unwrap();
+        self.operation.manipulate(item);
         self.manipulations_count += 1;
-    }
-
-    fn loose_interest(&mut self) {
-        let mut item = self.manipulated_item.unwrap();
-        item /= INTEREST_LOSS_FACTOR;
-        self.manipulated_item = Some(item);
     }
 
     fn throw_item(&mut self) -> Flyingitem {
         let target_monkey_id = self.get_target_monkey_id();
-        let item = self.manipulated_item.unwrap();
-        self.manipulated_item = None;
+        let item = self.manipulated_item.take().unwrap();
         Flyingitem {
             target_monkey_id,
             item,
@@ -107,14 +135,16 @@ impl Monkey {
     }
 
     fn get_target_monkey_id(&self) -> MonkeyId {
-        let item = self.manipulated_item.unwrap();
-        match item % self.test_value == 0 {
+        let item = self.manipulated_item.as_ref().unwrap();
+        let congruence = item.congruences_map.get(&self.test_value).unwrap();
+
+        match *congruence == 0 {
             true => self.target_true,
             false => self.target_false,
         }
     }
 
-    fn receive_item(&mut self, item: WorryLevel) {
+    fn receive_item(&mut self, item: Item) {
         self.items.push_back(item);
     }
 }
@@ -134,6 +164,21 @@ impl MonkeysCrew {
         self.monkeys.push(RefCell::new(monkey));
     }
 
+    fn fill_monkeys_congruences(&self) {
+        let list: Vec<WorryLevel> = self
+            .monkeys
+            .iter()
+            .map(|monkey| monkey.borrow().test_value)
+            .collect();
+        self.monkeys.iter().for_each(|monkey| {
+            monkey
+                .borrow_mut()
+                .items
+                .iter_mut()
+                .for_each(|item| item.fill_congruences_map(&list))
+        });
+    }
+
     fn do_round(&self) {
         self.monkeys.iter().for_each(|monkey_ref| {
             while monkey_ref.borrow().has_items_left() {
@@ -144,7 +189,6 @@ impl MonkeysCrew {
                     let mut monkey = monkey_ref.borrow_mut();
                     monkey.take_item();
                     monkey.manipulate_item();
-                    monkey.loose_interest();
                     monkey.throw_item()
                 };
                 let receiver_monkey = self.monkeys.get(target_monkey_id).unwrap();
@@ -160,7 +204,7 @@ struct MonkeyFactory {
     test_value: Option<WorryLevel>,
     target_true: Option<MonkeyId>,
     target_false: Option<MonkeyId>,
-    items: Option<VecDeque<WorryLevel>>,
+    items: Option<VecDeque<Item>>,
     ready_count: usize,
 }
 
@@ -215,7 +259,8 @@ impl MonkeyFactory {
             .map(|word| {
                 let mut words = word.split(',');
                 let word = words.next().unwrap();
-                word.parse::<WorryLevel>().unwrap()
+                let initial_level = word.parse::<WorryLevel>().unwrap();
+                Item::new(initial_level)
             })
             .collect();
         self.items = Some(items);
@@ -236,11 +281,11 @@ impl MonkeyFactory {
         };
         let operation = match symbol {
             "*" => Operation {
-                function: multiply,
+                function: Item::multiply,
                 right: value,
             },
             "+" => Operation {
-                function: add,
+                function: Item::add,
                 right: value,
             },
             _ => panic!("Invalid operator {}", symbol),
@@ -362,6 +407,8 @@ fn main() {
                 monkeys_crew.add_monkey(monkey);
             }
         });
+
+    monkeys_crew.fill_monkeys_congruences();
 
     for _ in 0..NB_ROUNDS {
         monkeys_crew.do_round();
