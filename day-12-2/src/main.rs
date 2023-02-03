@@ -31,7 +31,6 @@ struct PathFinding<'a> {
 impl<'a> PathFinding<'a> {
     fn new(graph: &'a Graph, initial_pos: Id) -> Self {
         let mapping = HashMap::new();
-        // mapping.insert(initial_pos, 0);
         PathFinding {
             graph,
             initial_pos,
@@ -79,13 +78,14 @@ impl Graph {
             row.iter().enumerate().for_each(|(x, _)| {
                 let pos = Pos { x, y };
 
+                let height = map.get_tile_height(&pos);
                 let adjacent_positions = map.get_accessible_tiles_from_pos(&pos);
                 let adjacents = adjacent_positions
                     .iter()
                     .map(|adjacent_pos| adjacent_pos.get_id(width))
                     .collect();
 
-                nodes.push(Node { adjacents });
+                nodes.push(Node { adjacents, height });
             });
         });
         Graph { nodes }
@@ -94,6 +94,7 @@ impl Graph {
 
 struct Node {
     adjacents: Vec<Id>,
+    height: Height,
 }
 
 fn can_go(from: Height, to: Height) -> bool {
@@ -101,7 +102,6 @@ fn can_go(from: Height, to: Height) -> bool {
 }
 
 struct Map {
-    start_pos: Pos,
     end_pos: Pos,
     rows: Vec<Vec<Height>>,
 }
@@ -113,7 +113,7 @@ impl Map {
         vec.into_iter()
             .filter(|adjacent_pos| {
                 let adjacent_height = self.get_tile_height(adjacent_pos);
-                can_go(current_height, adjacent_height)
+                can_go(adjacent_height, current_height)
             })
             .collect()
     }
@@ -164,7 +164,6 @@ impl Map {
 }
 
 struct MapFactory {
-    start_pos: Option<Pos>,
     end_pos: Option<Pos>,
     rows: Vec<Vec<Height>>,
     width: Option<usize>,
@@ -177,7 +176,6 @@ fn char_to_height(c: char) -> Height {
 impl MapFactory {
     fn new() -> Self {
         MapFactory {
-            start_pos: None,
             end_pos: None,
             rows: Vec::new(),
             width: None,
@@ -190,14 +188,7 @@ impl MapFactory {
             .enumerate()
             .map(|(x, c)| {
                 let letter = match c {
-                    'S' => {
-                        if self.start_pos.is_some() {
-                            panic!("There is already a start position");
-                        }
-                        let y = self.rows.len();
-                        self.start_pos = Some(Pos { x, y });
-                        'a'
-                    }
+                    'S' => 'a',
                     'E' => {
                         if self.end_pos.is_some() {
                             panic!("There is already a end position");
@@ -225,18 +216,12 @@ impl MapFactory {
 
     fn create_map(self) -> Map {
         let MapFactory {
-            start_pos,
             end_pos,
             rows,
             width: _width,
         } = self;
-        let start_pos = start_pos.unwrap();
         let end_pos = end_pos.unwrap();
-        Map {
-            start_pos,
-            end_pos,
-            rows,
-        }
+        Map { end_pos, rows }
     }
 }
 
@@ -266,12 +251,19 @@ fn main() {
     let graph = Graph::from_map(&map);
 
     let width = map.get_width();
-    let start_id = map.start_pos.get_id(width);
     let end_id = map.end_pos.get_id(width);
 
     println!("Find Paths");
-    let mut path_finding = PathFinding::new(&graph, start_id);
+    let mut path_finding = PathFinding::new(&graph, end_id);
     path_finding.find_paths();
-    let result = path_finding.mapping.get(&end_id).unwrap();
+
+    let result = graph
+        .nodes
+        .iter()
+        .enumerate()
+        .filter(|(id, node)| node.height == 0 && path_finding.mapping.contains_key(id))
+        .map(|(id, _)| path_finding.mapping.get(&id).unwrap())
+        .fold(Distance::MAX, |a, b| a.min(*b));
+
     println!("Result is `{}`", result);
 }
