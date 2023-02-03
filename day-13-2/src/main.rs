@@ -1,5 +1,6 @@
 #![feature(map_first_last)]
-
+use std::cmp::{Eq, Ord, Ordering, PartialEq, PartialOrd};
+use std::collections::BTreeSet;
 use std::env;
 use std::fs::File;
 use std::io::{self, BufRead};
@@ -9,51 +10,42 @@ type Value = usize;
 
 type NodeResult = Result<(), bool>;
 
-struct Pair {
-    left: Vec<Node>,
-    right: Vec<Node>,
+struct Packet {
+    list: Vec<Node>,
+    is_divider: bool,
 }
 
-impl Pair {
-    fn is_right_order(&self) -> bool {
-        match compare_list(&self.left, &self.right) {
-            Ok(()) => panic!("No decision had be made"),
-            Err(result) => result,
+impl Packet {
+    fn new(list: Vec<Node>, is_divider: bool) -> Self {
+        Packet { list, is_divider }
+    }
+}
+
+impl Ord for Packet {
+    fn cmp(&self, other: &Self) -> Ordering {
+        match compare_list(&self.list, &other.list) {
+            Ok(()) => Ordering::Equal,
+            Err(result) => match result {
+                true => Ordering::Less,
+                false => Ordering::Greater,
+            },
         }
     }
 }
 
-struct PairsFactory {
-    pairs: Vec<Pair>,
-    tmp_left: Option<Vec<Node>>,
-}
-
-impl PairsFactory {
-    fn new() -> Self {
-        PairsFactory {
-            pairs: Vec::new(),
-            tmp_left: None,
-        }
-    }
-
-    fn add_list(&mut self, list: Vec<Node>) {
-        match self.tmp_left.take() {
-            Some(left_list) => self.pairs.push(Pair {
-                left: left_list,
-                right: list,
-            }),
-            None => self.tmp_left = Some(list),
-        }
-    }
-
-    fn get_pairs(self) -> Vec<Pair> {
-        assert!(
-            self.tmp_left.is_none(),
-            "There should not be en orphan list remaining"
-        );
-        self.pairs
+impl PartialOrd for Packet {
+    fn partial_cmp(&self, other: &Packet) -> Option<Ordering> {
+        Some(self.cmp(other))
     }
 }
+
+impl PartialEq for Packet {
+    fn eq(&self, other: &Packet) -> bool {
+        compare_list(&self.list, &other.list).is_ok()
+    }
+}
+
+impl Eq for Packet {}
 
 enum Node {
     Value(Value),
@@ -186,8 +178,8 @@ fn main() {
     let file = File::open(path).unwrap();
     let lines = io::BufReader::new(file).lines();
 
-    let mut pairs_factory = PairsFactory::new();
     let mut line_parser = LineParser::new();
+    let mut packets_set = BTreeSet::new();
 
     lines
         .filter_map(|line| match line {
@@ -198,19 +190,26 @@ fn main() {
             }
         })
         .for_each(|line| {
-            if line != "" {
+            if !line.is_empty() {
                 line.chars().for_each(|c| line_parser.parse_char(c));
                 let list = line_parser.get_result();
-                pairs_factory.add_list(list);
+                let packet = Packet::new(list, false);
+                packets_set.insert(packet);
             }
         });
 
-    let pairs = pairs_factory.get_pairs();
-    let result: usize = pairs
+    ["[[2]]", "[[6]]"].iter().for_each(|line| {
+        line.chars().for_each(|c| line_parser.parse_char(c));
+        let list = line_parser.get_result();
+        let packet = Packet::new(list, true);
+        packets_set.insert(packet);
+    });
+
+    let result: usize = packets_set
         .iter()
         .enumerate()
-        .filter(|(_, pair)| pair.is_right_order())
+        .filter(|(_, packet)| packet.is_divider)
         .map(|(idx, _)| idx + 1)
-        .sum();
+        .product();
     println!("Result is `{:?}`", result);
 }
