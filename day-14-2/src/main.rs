@@ -112,9 +112,6 @@ impl Scan {
                 Some(some_new_pos) => pos = some_new_pos,
                 None => return self.try_add_sand(&pos),
             }
-            if pos.y > self.depth {
-                return false;
-            }
         }
     }
 
@@ -157,6 +154,9 @@ impl Scan {
     }
 
     fn get_tile_content(&self, pos: &Pos) -> Tile {
+        if pos.y > self.depth {
+            return Tile::Rock;
+        }
         match self.content.get(pos) {
             Some(tile) => tile.clone(),
             None => Tile::Air,
