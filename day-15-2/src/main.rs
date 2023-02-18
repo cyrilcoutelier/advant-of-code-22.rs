@@ -7,7 +7,7 @@ use std::path::Path;
 
 use day_14_1::{get_intersection_disk_row, Couple, Pos, Segments};
 
-const SEARCHED_ROW: isize = 2000000;
+const MAX_SIZE: isize = 4000000;
 
 fn parse_line(line: &str) -> Couple {
     let mut words = line.split(' ');
@@ -57,7 +57,6 @@ fn main() {
     let file = File::open(path).unwrap();
     let lines = io::BufReader::new(file).lines();
 
-    let mut segments = Segments::new();
     let couples: Vec<Couple> = lines
         .filter_map(|line| match line {
             Ok(line_str) => Some(line_str),
@@ -69,25 +68,27 @@ fn main() {
         .map(|line| parse_line(&line))
         .collect();
 
-    couples
-        .iter()
-        .filter_map(|couple| {
-            get_intersection_disk_row(&couple.sensor, couple.distance, SEARCHED_ROW)
+    let result = (0..=MAX_SIZE)
+        .find_map(|y| {
+            let mut segments = Segments::new();
+            couples
+                .iter()
+                .filter_map(|couple| get_intersection_disk_row(&couple.sensor, couple.distance, y))
+                .for_each(|segment| {
+                    segments.add_segment(segment);
+                });
+            let inverse_segments = segments.get_inverse_on_range(0, MAX_SIZE);
+            match inverse_segments.map.keys().next() {
+                Some(x) => {
+                    if inverse_segments.get_covered() != 1 {
+                        panic!("There should be only 1 covered");
+                    }
+                    println!("Found for x={} and y{}", x, y);
+                    Some(x * MAX_SIZE + y)
+                }
+                None => None,
+            }
         })
-        .for_each(|segment| {
-            segments.add_segment(segment);
-        });
-
-    couples.iter().for_each(|couple| {
-        if couple.beacon.y == SEARCHED_ROW {
-            segments.remove_dot(couple.beacon.x);
-        }
-        if couple.sensor.y == SEARCHED_ROW {
-            segments.remove_dot(couple.sensor.x);
-        }
-    });
-
-    let result: usize = segments.map.values().sum();
-
+        .unwrap();
     println!("Result is `{}`", result);
 }

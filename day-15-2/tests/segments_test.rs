@@ -341,3 +341,166 @@ mod remove_dot {
         assert_eq!(format!("{:?}", segments.map), "{}");
     }
 }
+
+mod get_inverse_on_range {
+    use std::collections::BTreeMap;
+    use std::ops::Bound::{Excluded, Included};
+
+    use day_14_1::{Segment, Segments};
+
+    #[test]
+    fn test_empty() {
+        // Given
+        let segments = Segments::new();
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 8}");
+    }
+
+    #[test]
+    fn test_surounded() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 0,
+            length: 1,
+        });
+        segments.add_segment(Segment {
+            start: 12,
+            length: 3,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 8}");
+    }
+
+    #[test]
+    fn test_surounded_edge() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 0,
+            length: 3,
+        });
+        segments.add_segment(Segment {
+            start: 11,
+            length: 3,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 8}");
+    }
+
+    #[test]
+    fn test_surounded_overlap() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 0,
+            length: 4,
+        });
+        segments.add_segment(Segment {
+            start: 10,
+            length: 3,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{4: 6}");
+    }
+
+    #[test]
+    fn test_full_overlap() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 3,
+            length: 8,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{}");
+    }
+
+    #[test]
+    fn test_left_overlap() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 3,
+            length: 2,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{5: 6}");
+    }
+
+    #[test]
+    fn test_right_overlap() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 9,
+            length: 2,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 6}");
+    }
+
+    #[test]
+    fn test_inside() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 5,
+            length: 2,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 2, 7: 4}");
+    }
+
+    #[test]
+    fn test_two_inside() {
+        // Given
+        let mut segments = Segments::new();
+        segments.add_segment(Segment {
+            start: 4,
+            length: 1,
+        });
+        segments.add_segment(Segment {
+            start: 7,
+            length: 1,
+        });
+
+        // When
+        let result = segments.get_inverse_on_range(3, 10);
+
+        // Then
+        assert_eq!(format!("{:?}", result.map), "{3: 1, 5: 2, 8: 3}");
+    }
+}

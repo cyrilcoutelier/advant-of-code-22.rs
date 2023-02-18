@@ -57,7 +57,7 @@ impl Segments {
 
         let previous_segment = self
             .map
-            .range((Included(&isize::MIN), Excluded(&segment.start)))
+            .range((Included(isize::MIN), Excluded(segment.start)))
             .rev()
             .next();
         if let Some((start, length)) = previous_segment {
@@ -86,7 +86,7 @@ impl Segments {
     fn remove_overlapping_segments(&mut self, start: isize, length: usize) -> usize {
         let removed_starts: Vec<isize> = self
             .map
-            .range((Excluded(&start), Included(&(start + length as isize))))
+            .range((Excluded(start), Included(start + length as isize)))
             .map(|(start, _)| *start)
             .collect();
 
@@ -107,7 +107,7 @@ impl Segments {
     pub fn remove_dot(&mut self, pos: isize) {
         let previous_segment = self
             .map
-            .range((Included(&isize::MIN), Included(&pos)))
+            .range((Included(isize::MIN), Included(pos)))
             .rev()
             .next();
         if let Some((start, length)) = previous_segment {
@@ -133,6 +133,47 @@ impl Segments {
             self.map.insert(start, first_length as usize);
             self.map.insert(pos + 1, second_length);
         }
+    }
+
+    pub fn get_inverse_on_range(&self, start: isize, end: isize) -> Self {
+        let mut segments = Segments::new();
+        let previous = self
+            .map
+            .range((Included(isize::MIN), Excluded(start)))
+            .rev()
+            .next();
+
+        let mut current_pos = start;
+        if let Some((pos, size)) = previous {
+            current_pos = current_pos.max(*pos + *size as isize);
+        }
+
+        self.map
+            .range((Included(start), Included(end)))
+            .for_each(|(pos, size)| {
+                if *pos > current_pos {
+                    let new_segment = Segment {
+                        start: current_pos,
+                        length: (pos - current_pos) as usize,
+                    };
+                    segments.add_segment(new_segment);
+                }
+                current_pos = pos + *size as isize;
+            });
+
+        if current_pos < end + 1 {
+            let new_segment = Segment {
+                start: current_pos,
+                length: (end + 1 - current_pos) as usize,
+            };
+            segments.add_segment(new_segment);
+        }
+
+        segments
+    }
+
+    pub fn get_covered(&self) -> usize {
+        self.map.values().sum()
     }
 }
 
