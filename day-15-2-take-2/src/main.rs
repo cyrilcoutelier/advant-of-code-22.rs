@@ -5,7 +5,7 @@ use std::fs::File;
 use std::io::{self, BufRead};
 use std::path::Path;
 
-use day_14_1::{get_intersection_disk_row, Couple, Pos, Segments};
+use day_14_1::{Couple, Pos};
 
 const MAX_SIZE: isize = 4000000;
 
@@ -68,27 +68,23 @@ fn main() {
         .map(|line| parse_line(&line))
         .collect();
 
-    let result = (0..=MAX_SIZE)
-        .find_map(|y| {
-            let mut segments = Segments::new();
-            couples
-                .iter()
-                .filter_map(|couple| get_intersection_disk_row(&couple.sensor, couple.distance, y))
-                .for_each(|segment| {
-                    segments.add_segment(segment);
-                });
-            let inverse_segments = segments.get_inverse_on_range(0, MAX_SIZE);
-            match inverse_segments.map.keys().next() {
-                Some(x) => {
-                    if inverse_segments.get_covered() != 1 {
-                        panic!("There should be only 1 covered");
-                    }
-                    println!("Found for x={} and y{}", x, y);
-                    Some(x * MAX_SIZE + y)
-                }
-                None => None,
-            }
+    let result = couples
+        .iter()
+        .find_map(|couple| {
+            couple
+                .sensor
+                .get_circle_iter(couple.distance + 1)
+                .filter(|pos| pos.x >= 0 && pos.x <= MAX_SIZE && pos.y >= 0 && pos.y <= MAX_SIZE)
+                .find(|pos| {
+                    couples
+                        .iter()
+                        .filter(|searched_couple| searched_couple.sensor != couple.sensor)
+                        .all(|searched_couple| {
+                            searched_couple.sensor.get_distance(pos) > searched_couple.distance
+                        })
+                })
         })
         .unwrap();
-    println!("Result is `{}`", result);
+
+    println!("Result is `{}`", result.y + result.x * MAX_SIZE);
 }
